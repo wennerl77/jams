@@ -2,7 +2,7 @@
 # Benchmark Suite Makefile (BOCA vs Helium)
 # =============================================================================
 
-.PHONY: help setup install reset-db start-systems dashboard collect-boca collect-helium load-boca load-helium clean
+.PHONY: help setup install reset-db start-systems dashboard collect-boca collect-helium load-boca load-helium clean submodule-init vm-up vm-provision vm-down vm-status
 
 # Default Variables
 SCENARIO ?= burst
@@ -16,6 +16,7 @@ PYTHON ?= $(VENV)/bin/python
 PIP ?= $(VENV)/bin/pip
 STREAMLIT ?= $(VENV)/bin/streamlit
 LOCUST ?= $(VENV)/bin/locust
+VAGRANT_DIR ?= vagrant
 
 help: ## Exibe este menu de ajuda com os comandos disponíveis
 	@echo "================================================================="
@@ -25,11 +26,36 @@ help: ## Exibe este menu de ajuda com os comandos disponíveis
 	@echo "================================================================="
 	@echo " Exemplo de Uso:"
 	@echo "   make setup"
-	@echo "   make reset-db"
-	@echo "   make reset-db SYSTEMS=true  (ou make start-systems)"
+	@echo "   make vm-up"
+	@echo "   make reset-db SYSTEMS=true"
 	@echo "   make dashboard"
 	@echo "   make load-boca SCENARIO=burst USERS=10"
 	@echo "================================================================="
+
+submodule-init: ## Garante que os submódulos Git (vagrant/) estejam clonados
+	@if [ ! -f $(VAGRANT_DIR)/Vagrantfile ]; then \
+		echo "Inicializando submódulo Git (vagrant/)..."; \
+		git submodule update --init --recursive; \
+	fi
+
+vm-up: submodule-init ## Sobe as VMs Vagrant (boca e helium) e executa o provisionamento
+	@echo "Iniciando VMs Vagrant e provisionando containers BOCA e Helium..."
+	cd $(VAGRANT_DIR) && vagrant up
+
+vm-provision: submodule-init ## Re-executa os scripts de provisionamento nas VMs Vagrant
+	@echo "Forçando re-provisionamento das VMs Vagrant..."
+	cd $(VAGRANT_DIR) && vagrant provision
+
+vm-down: ## Desliga as máquinas virtuais Vagrant
+	@echo "Desligando VMs Vagrant..."
+	cd $(VAGRANT_DIR) && vagrant halt
+
+vm-status: ## Exibe o status atual das máquinas virtuais Vagrant
+	@if [ -d $(VAGRANT_DIR) ]; then \
+		cd $(VAGRANT_DIR) && vagrant status; \
+	else \
+		vagrant status; \
+	fi
 
 setup: install ## Instala todas as dependências Python em ambiente virtual (venv/)
 

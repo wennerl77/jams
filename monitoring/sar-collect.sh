@@ -27,15 +27,20 @@ echo " Interval:    ${INTERVAL}s (Runtime Configurable)"
 echo " Output Log:  $RAW_LOG"
 echo "================================================================="
 
+VAGRANT_DIR="$ROOT_DIR"
+if [ -d "$ROOT_DIR/vagrant" ] && [ -f "$ROOT_DIR/vagrant/Vagrantfile" ]; then
+    VAGRANT_DIR="$ROOT_DIR/vagrant"
+fi
+
 if ! command -v vagrant &> /dev/null; then
     echo "ERROR: Vagrant CLI is not installed or not in PATH."
     exit 1
 fi
 
-echo "Connecting via Vagrant SSH to $TARGET..."
+echo "Connecting via Vagrant SSH to $TARGET (directory: $VAGRANT_DIR)..."
 
 # Collect sar data via Vagrant SSH
-vagrant ssh "$TARGET" -c "sar -u -r -b -w $INTERVAL 60" > "$RAW_LOG" 2>&1 &
+(cd "$VAGRANT_DIR" && vagrant ssh "$TARGET" -c "sar -u -r -b -w $INTERVAL 60") > "$RAW_LOG" 2>&1 &
 SAR_PID=$!
 
 echo "Collector started with PID $SAR_PID. Converting output to CSV..."
