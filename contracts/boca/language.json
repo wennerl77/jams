@@ -1,0 +1,14 @@
+[
+  {
+    "langnumber": 1,
+    "langname": "C++17 (g++)",
+    "langextension": "cpp",
+    "langcompiler": "g++ -O2 -std=c++17"
+  },
+  {
+    "langnumber": 2,
+    "langname": "Python 3",
+    "langextension": "py",
+    "langcompiler": "python3"
+  }
+]

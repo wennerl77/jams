@@ -1,0 +1,12 @@
+{
+  "contestnumber": 1,
+  "problemnumber": 1,
+  "langnumber": 1,
+  "filename": "ac_sum.cpp",
+  "form_fields": {
+    "problem": 1,
+    "language": 1,
+    "sourcefile": "@ac_sum.cpp"
+  },
+  "expected_verdict": "YES"
+}

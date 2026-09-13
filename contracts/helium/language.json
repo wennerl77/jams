@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "name": "C++17 (g++)",
+    "extension": "cpp",
+    "compile_command": "g++ -O2 -std=c++17"
+  },
+  {
+    "id": 2,
+    "name": "Python 3",
+    "extension": "py",
+    "compile_command": "python3"
+  }
+]

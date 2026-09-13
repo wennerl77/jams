@@ -1,0 +1,9 @@
+{
+  "problemnumber": 1,
+  "problemshortname": "A",
+  "problemname": "Soma Simples",
+  "problemtimelimit": 1,
+  "problemmemlimit": 262144,
+  "problembasename": "soma",
+  "problempackagepath": "submissions/problems/problem_A.zip"
+}

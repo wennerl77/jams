@@ -1,0 +1,8 @@
+{
+  "id": 1,
+  "name": "Team 1",
+  "username": "team1",
+  "password": "team123_benchmark",
+  "role": "competitor",
+  "is_active": true
+}

@@ -1,0 +1,11 @@
+{
+  "contestnumber": 1,
+  "contestname": "Benchmark ICPC 2026",
+  "conteststart": "2026-09-12 09:00:00",
+  "contestduration": 18000,
+  "contestlastchange": 0,
+  "contestpenalty": 1200,
+  "contestmaxfilesize": 100000,
+  "contestactive": "t",
+  "conteststatus": "active"
+}
