@@ -27,20 +27,32 @@ echo " Interval:    ${INTERVAL}s (Runtime Configurable)"
 echo " Output Log:  $RAW_LOG"
 echo "================================================================="
 
-VAGRANT_DIR="$ROOT_DIR"
-if [ -d "$ROOT_DIR/vagrant" ] && [ -f "$ROOT_DIR/vagrant/Vagrantfile" ]; then
-    VAGRANT_DIR="$ROOT_DIR/vagrant"
-fi
+get_vagrant_ssh_cmd() {
+    local target="$1"
+    if [ -d "$ROOT_DIR/vagrant" ] && (cd "$ROOT_DIR/vagrant" && vagrant status "$target" 2>/dev/null | grep -q "running"); then
+        echo "cd '$ROOT_DIR/vagrant' && vagrant ssh '$target' -c"
+        return
+    fi
+    local global_id
+    global_id=$(vagrant global-status 2>/dev/null | awk -v t="$target" '$2 == t && $4 == "running" {print $1; exit}')
+    if [ -n "$global_id" ]; then
+        echo "vagrant ssh $global_id -c"
+        return
+    fi
+    echo ""
+}
 
-if ! command -v vagrant &> /dev/null; then
-    echo "ERROR: Vagrant CLI is not installed or not in PATH."
+TARGET_SSH_CMD=$(get_vagrant_ssh_cmd "$TARGET")
+
+if [ -z "$TARGET_SSH_CMD" ]; then
+    echo "ERROR: Vagrant VM '$TARGET' is not running or not accessible."
     exit 1
 fi
 
-echo "Connecting via Vagrant SSH to $TARGET (directory: $VAGRANT_DIR)..."
+echo "Connecting via Vagrant SSH to $TARGET..."
 
 # Collect sar data via Vagrant SSH
-(cd "$VAGRANT_DIR" && vagrant ssh "$TARGET" -c "sar -u -r -b -w $INTERVAL 60") > "$RAW_LOG" 2>&1 &
+eval "$TARGET_SSH_CMD \"sar -u -r -b -w $INTERVAL 60\"" > "$RAW_LOG" 2>&1 &
 SAR_PID=$!
 
 echo "Collector started with PID $SAR_PID. Converting output to CSV..."

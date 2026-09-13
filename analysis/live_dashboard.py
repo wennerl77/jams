@@ -82,49 +82,69 @@ if "spawned_pids" not in st.session_state:
 # Funções Auxiliares de Telemetria 100% Real (ZERO MOCKS)
 # -----------------------------------------------------------------------------
 
-def get_real_resting_telemetry(target_vm):
+def resolve_vagrant_ssh_command(target_vm):
     """
-    Obtém métricas REAIS de repouso (CPU %user, %sys, RAM MB) diretamente da VM via Vagrant SSH.
-    Retorna um dicionário com os valores REAIS ou None se a VM estiver inacessível.
+    Localiza o comando SSH correto para a VM (local via vagrant/ ou global via vagrant global-status).
     """
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     vagrant_dir = os.path.join(root_dir, "vagrant")
-    
-    cmd_dir = vagrant_dir if os.path.exists(os.path.join(vagrant_dir, "Vagrantfile")) else root_dir
-    cmd = f"cd '{cmd_dir}' && vagrant ssh {target_vm} -c 'sar -u -r 1 1'"
-    
+
+    # 1. Tenta diretório vagrant local
+    if os.path.exists(os.path.join(vagrant_dir, "Vagrantfile")):
+        try:
+            res = subprocess.run(f"cd '{vagrant_dir}' && vagrant status {target_vm}", shell=True, capture_output=True, text=True, timeout=3)
+            if "running" in res.stdout:
+                return f"cd '{vagrant_dir}' && vagrant ssh {target_vm} -c"
+        except Exception:
+            pass
+
+    # 2. Busca no vagrant global-status
+    try:
+        res = subprocess.run("vagrant global-status", shell=True, capture_output=True, text=True, timeout=4)
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 4 and parts[1] == target_vm and parts[3] == "running":
+                    return f"vagrant ssh {parts[0]} -c"
+    except Exception:
+        pass
+
+    return None
+
+
+def get_real_resting_telemetry(target_vm):
+    """
+    Obtém métricas REAIS de repouso (CPU %user, %sys, RAM MB) lendo diretamente do kernel (/proc/stat e /proc/meminfo) via SSH.
+    Retorna dicionário com os valores REAIS ou {"online": False} se a VM estiver inacessível.
+    """
+    ssh_prefix = resolve_vagrant_ssh_command(target_vm)
+    if not ssh_prefix:
+        return {"online": False, "cpu_user": 0.0, "cpu_system": 0.0, "ram_used_mb": 0.0}
+
+    cmd = f'{ssh_prefix} "cat /proc/stat | head -n 1; cat /proc/meminfo | head -n 4"'
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=6)
         if res.returncode == 0 and res.stdout:
             lines = res.stdout.strip().splitlines()
-            cpu_user, cpu_sys, ram_used = 0.0, 0.0, 0.0
-            
-            for line in lines:
-                parts = line.split()
-                if len(parts) >= 6 and "all" in parts:
-                    try:
-                        cpu_user = float(parts[2].replace(',', '.'))
-                        cpu_sys = float(parts[4].replace(',', '.'))
-                    except ValueError:
-                        pass
-                if len(parts) >= 5 and any(k in line.lower() for k in ["kbmemused", "memused", "kbavail"]):
-                    try:
-                        # Extrai uso de memória em MB
-                        for p in parts[1:]:
-                            if p.replace('.', '').replace(',', '').isdigit():
-                                val = float(p.replace(',', '.'))
-                                if val > 1000: # em KB
-                                    ram_used = val / 1024.0
-                                    break
-                    except ValueError:
-                        pass
-            
-            return {
-                "online": True,
-                "cpu_user": cpu_user,
-                "cpu_system": cpu_sys,
-                "ram_used_mb": ram_used if ram_used > 0 else 450.0
-            }
+            if len(lines) >= 3:
+                cpu_parts = lines[0].split()
+                user = float(cpu_parts[1])
+                sys_cpu = float(cpu_parts[3])
+                total = sum([float(x) for x in cpu_parts[1:]])
+                
+                cpu_user_pct = (user / total) * 100.0 if total > 0 else 0.0
+                cpu_sys_pct = (sys_cpu / total) * 100.0 if total > 0 else 0.0
+                
+                mem_total = float(lines[1].split()[1]) / 1024.0
+                mem_avail = float(lines[3].split()[1]) / 1024.0 if len(lines) >= 4 and "Available" in lines[3] else float(lines[2].split()[1]) / 1024.0
+                ram_used_mb = mem_total - mem_avail
+                
+                return {
+                    "online": True,
+                    "cpu_user": cpu_user_pct,
+                    "cpu_system": cpu_sys_pct,
+                    "ram_used_mb": max(ram_used_mb, 100.0)
+                }
     except Exception:
         pass
     
@@ -159,7 +179,7 @@ def reset_databases_parity():
     reset_script = os.path.join(root_dir, "provisioning", "reset_databases.sh")
     
     try:
-        res = subprocess.run([reset_script], capture_output=True, text=True, timeout=30)
+        res = subprocess.run([reset_script], capture_output=True, text=True, timeout=35)
         return res.returncode == 0
     except Exception:
         return False
@@ -171,20 +191,19 @@ def start_real_load_session(scenario, user_count, sampling_interval, enabled_ver
     2. Dispara a coleta de telemetria sar via SSH.
     3. Dispara o gerador de carga Locust real.
     """
-    # 1. Reset Automático dos Bancos em Paridade
     with st.spinner("🧹 Resetando bancos de dados para estado limpo de paridade (PostgreSQL & MySQL)..."):
         reset_databases_parity()
 
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     
-    # 2. Dispara Telemetria sar nas VMs
+    # Dispara Telemetria sar nas VMs
     sar_script = os.path.join(root_dir, "monitoring", "sar-collect.sh")
     proc_sar_boca = subprocess.Popen([sar_script, "boca", scenario, str(sampling_interval)], cwd=root_dir)
     proc_sar_helium = subprocess.Popen([sar_script, "helium", scenario, str(sampling_interval)], cwd=root_dir)
     
     st.session_state["spawned_pids"].extend([proc_sar_boca.pid, proc_sar_helium.pid])
 
-    # 3. Dispara Carga Concorrente com Locust
+    # Dispara Carga Concorrente com Locust
     loadgen_dir = os.path.join(root_dir, "loadgen")
     venv_locust = os.path.join(root_dir, "venv", "bin", "locust")
     locust_cmd = venv_locust if os.path.exists(venv_locust) else "locust"
@@ -193,7 +212,6 @@ def start_real_load_session(scenario, user_count, sampling_interval, enabled_ver
     env_vars = os.environ.copy()
     env_vars["ENABLED_VERDICTS"] = verdicts_str
     
-    # Disparo Locust BOCA
     env_boca = env_vars.copy()
     env_boca["TARGET_SYSTEM"] = "boca"
     env_boca["SCENARIO"] = scenario
@@ -202,7 +220,6 @@ def start_real_load_session(scenario, user_count, sampling_interval, enabled_ver
         cwd=loadgen_dir, env=env_boca
     )
     
-    # Disparo Locust Helium
     env_helium = env_vars.copy()
     env_helium["TARGET_SYSTEM"] = "helium"
     env_helium["SCENARIO"] = scenario
@@ -231,7 +248,6 @@ def stop_real_load_session():
 st.sidebar.image("https://img.icons8.com/color/96/000000/dashboard.png", width=64)
 st.sidebar.title("⚡ JAMS Control Master")
 
-# Botões de Ação Proeminentes (LIGAR / DESLIGAR)
 col_btn1, col_btn2 = st.sidebar.columns(2)
 
 with col_btn1:
@@ -356,7 +372,6 @@ def render_system_metrics(system_name, df_sar, idle_info, header_class):
             val_judge = float(pd.Series(judge_lat).mean()) if len(judge_lat) > 0 else 0
             st.metric("Judge Latency Avg", f"{val_judge:.0f} ms")
 
-        # Gráfico de CPU
         fig_cpu = px.line(
             df_sar, x="timestamp", y=["cpu_user", "cpu_system"],
             labels={"value": "Uso de CPU (%)", "timestamp": "Tempo"},
@@ -366,7 +381,6 @@ def render_system_metrics(system_name, df_sar, idle_info, header_class):
         fig_cpu.update_layout(template="plotly_dark", height=280, margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig_cpu, use_container_width=True)
 
-        # Gráfico de Latência
         if "http_latency_ms" in df_sar.columns and "judge_latency_ms" in df_sar.columns:
             fig_lat = px.line(
                 df_sar, x="timestamp", y=["http_latency_ms", "judge_latency_ms"],

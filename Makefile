@@ -38,9 +38,13 @@ submodule-init: ## Garante que os submódulos Git (vagrant/) estejam clonados
 		git submodule update --init --recursive; \
 	fi
 
-vm-up: submodule-init ## Sobe as VMs Vagrant (boca e helium) e executa o provisionamento
-	@echo "Iniciando VMs Vagrant e provisionando containers BOCA e Helium..."
-	cd $(VAGRANT_DIR) && vagrant up
+vm-up: submodule-init ## Sobe as VMs Vagrant (detecta se já estão ativas e rodando)
+	@if ping -c 1 -w 1 192.168.56.11 >/dev/null 2>&1 && ping -c 1 -w 1 192.168.56.10 >/dev/null 2>&1; then \
+		echo "✔ VMs BOCA (192.168.56.11) e Helium (192.168.56.10) já estão ativas e rodando!"; \
+	else \
+		echo "Iniciando VMs Vagrant e provisionando containers BOCA e Helium..."; \
+		cd $(VAGRANT_DIR) && vagrant up; \
+	fi
 
 vm-provision: submodule-init ## Re-executa os scripts de provisionamento nas VMs Vagrant
 	@echo "Forçando re-provisionamento das VMs Vagrant..."
