@@ -56,22 +56,7 @@ def parse_sar_raw(raw_log_path, output_csv_path):
         df.to_csv(output_csv_path, index=False)
         print(f"Successfully parsed {len(rows)} records into {output_csv_path}")
     else:
-        # Fallback dummy CSV structure for initial setup
-        timestamps = pd.date_range(end=pd.Timestamp.now(), periods=30, freq="1s")
-        df = pd.DataFrame({
-            "timestamp": timestamps,
-            "cpu_user": [15.5 + i for i in range(30)],
-            "cpu_system": [5.2] * 30,
-            "cpu_idle": [79.3] * 30,
-            "ram_used_mb": [800 + (i * 2) for i in range(30)],
-            "http_latency_ms": [30 + i for i in range(30)],
-            "judge_latency_ms": [120 + (i * 3) for i in range(30)],
-            "ac_count": [20] * 30,
-            "wa_count": [4] * 30,
-            "tle_count": [1] * 30
-        })
-        df.to_csv(output_csv_path, index=False)
-        print(f"Generated structured initial CSV at {output_csv_path}")
+        print(f"Warning: No valid sar records found in {raw_log_path}. CSV not created.")
 
 if __name__ == "__main__":
     if len(sys.argv) >= 3:

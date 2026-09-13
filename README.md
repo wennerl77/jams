@@ -81,22 +81,19 @@ Siga este fluxo no dia a dia quando as máquinas virtuais Vagrant já foram cria
 # 1. Garantir que as VMs estão ligadas (início instantâneo)
 make vm-up
 
-# 2. (Opcional) Resetar o banco para uma nova rodada limpa de testes
-make reset-db
-
-# 3. Iniciar o Live Dashboard Web
+# 2. Iniciar o Live Dashboard Web
 make dashboard
-
-# 4. Em outros terminais, iniciar a telemetria e o disparo de carga:
-
-# Para o Helium:
-make collect-helium SCENARIO=burst INTERVAL=1
-make load-helium SCENARIO=burst USERS=10
-
-# Para o BOCA:
-make collect-boca SCENARIO=burst INTERVAL=1
-make load-boca SCENARIO=burst USERS=10
 ```
+
+Acesse no navegador: **`http://localhost:8501`**
+
+#### O que acontece no Dashboard:
+1. **Modo Standby (Observação em Repouso)**: Ao abrir o Dashboard, ele monitora em tempo real a telemetria **REAL** em repouso das VMs (CPU % e RAM MB) via SSH, sem enviar requisições.
+2. **Botão `▶️ LIGAR` (Carga Real & Paridade)**: Ao clicar em **`▶️ LIGAR`**, a Dashboard executa automaticamente:
+   - Reset limpo dos bancos de dados (**PostgreSQL** e **MySQL**) com as sementes exatas de paridade.
+   - Disparo da coleta de telemetria `sar` via SSH.
+   - Disparo do gerador de carga `Locust` com submissões HTTP reais.
+3. **Botão `⏹️ DESLIGAR`**: Interrompe o envio de requisições e retorna a interface para a observação de repouso.
 
 ---
 
