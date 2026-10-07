@@ -9,7 +9,17 @@ __pycache__/
 *$py.class
 .pytest_cache/
 
-# Results & Output logs
-results/*/*.csv
-results/*/*.raw.txt
-!results/*/.gitkeep
+# Environment Variables
+.env
+loadgen/.env
+
+# Results, Logs & Telemetry Output
+results/
+*.log
+
+# Streamlit Local Cache
+.streamlit/
+
+# Legacy Artifacts
+.vagrant/
+*.vagrant

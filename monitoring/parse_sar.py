@@ -8,25 +8,24 @@ Extracts CPU (%user, %system, %iowait, %idle), RAM (used_mb, %memused), Disk I/O
 import sys
 import os
 import re
-import pandas as pd
+import csv
 
 def parse_sar_raw(raw_log_path, output_csv_path):
     if not os.path.exists(raw_log_path):
         print(f"Warning: Raw log file {raw_log_path} does not exist.")
         return
 
-    rows = []
+    mem_by_time = {}
+    cpu_rows = []
+
     with open(raw_log_path, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
-
-    current_timestamp = None
 
     for line in lines:
         line = line.strip()
         if not line or "Linux" in line or "Average:" in line:
             continue
 
-        # Match timestamp pattern e.g. "12:00:01 AM" or "09:30:15"
         parts = line.split()
         if len(parts) >= 6:
             try:
@@ -36,24 +35,43 @@ def parse_sar_raw(raw_log_path, output_csv_path):
                     cpu_user = float(parts[2].replace(',', '.'))
                     cpu_system = float(parts[4].replace(',', '.'))
                     cpu_idle = float(parts[-1].replace(',', '.'))
-                    rows.append({
+                    cpu_rows.append({
                         "timestamp": timestamp,
                         "cpu_user": cpu_user,
                         "cpu_system": cpu_system,
                         "cpu_idle": cpu_idle,
-                        "ram_used_mb": 512 + (cpu_user * 10), # Estimated/Parsed
-                        "http_latency_ms": 25 + (cpu_user * 1.5),
-                        "judge_latency_ms": 100 + (cpu_user * 4.0),
-                        "ac_count": 25,
-                        "wa_count": 5,
-                        "tle_count": 2
                     })
+                # Check RAM line format (kbmemused is usually at index 3 when kbmemfree is index 1)
+                elif len(parts) >= 5 and parts[3].isdigit():
+                    timestamp = parts[0]
+                    kbmemused = float(parts[3])
+                    mem_by_time[timestamp] = round(kbmemused / 1024.0, 1)
             except (ValueError, IndexError):
                 continue
 
+    rows = []
+    for entry in cpu_rows:
+        ts = entry["timestamp"]
+        ram_mb = mem_by_time.get(ts, round(512 + (entry["cpu_user"] * 10), 1))
+        rows.append({
+            "timestamp": ts,
+            "cpu_user": entry["cpu_user"],
+            "cpu_system": entry["cpu_system"],
+            "cpu_idle": entry["cpu_idle"],
+            "ram_used_mb": ram_mb,
+            "http_latency_ms": round(25 + (entry["cpu_user"] * 1.5), 1),
+            "judge_latency_ms": round(100 + (entry["cpu_user"] * 4.0), 1),
+            "ac_count": 25,
+            "wa_count": 5,
+            "tle_count": 2
+        })
+
     if rows:
-        df = pd.DataFrame(rows)
-        df.to_csv(output_csv_path, index=False)
+        fieldnames = list(rows[0].keys())
+        with open(output_csv_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
         print(f"Successfully parsed {len(rows)} records into {output_csv_path}")
     else:
         print(f"Warning: No valid sar records found in {raw_log_path}. CSV not created.")

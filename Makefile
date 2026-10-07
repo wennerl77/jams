@@ -1,8 +1,21 @@
 # =============================================================================
-# Benchmark Suite Makefile (BOCA vs Helium)
+# JAMS Benchmark Suite Makefile — Helium Controlled Edition
 # =============================================================================
 
-.PHONY: help setup install reset-db start-systems dashboard collect-boca collect-helium load-boca load-helium clean submodule-init vm-up vm-provision vm-down vm-status
+.PHONY: help setup install build up down ps logs \
+	helium-build helium-up helium-down helium-ps helium-logs reset-db-helium \
+	reset-db dashboard test-submission collect-helium load-helium clean \
+	vm-up vm-down vm-status
+
+# Resolve canonical root directory
+ROOT_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+
+# Select active Python virtual environment (prefers root venv, falls back to loadgen/venv)
+ifneq ("$(wildcard $(ROOT_DIR)/venv/bin/python)","")
+	VENV ?= $(ROOT_DIR)/venv
+else
+	VENV ?= $(ROOT_DIR)/loadgen/venv
+endif
 
 # Default Variables
 SCENARIO ?= burst
@@ -10,104 +23,113 @@ INTERVAL ?= 1
 USERS ?= 1
 SPAWN_RATE ?= 1
 PORT ?= 8501
-SYSTEMS ?= false
-VENV ?= venv
-PYTHON ?= $(VENV)/bin/python
-PIP ?= $(VENV)/bin/pip
-STREAMLIT ?= $(VENV)/bin/streamlit
-LOCUST ?= $(VENV)/bin/locust
-VAGRANT_DIR ?= vagrant
+FILE ?= ac_sum.cpp
+ifeq ($(origin LANG),environment)
+    LANG := cpp
+endif
+LANG ?= cpp
+PYTHON := $(VENV)/bin/python
+PIP := $(VENV)/bin/pip
+STREAMLIT := $(VENV)/bin/streamlit
+LOCUST := $(VENV)/bin/locust
+HELIUM_HOST ?= http://127.0.0.10:8000
+DOCKER_COMPOSE ?= docker compose
+
+COMPOSE_HELIUM := $(DOCKER_COMPOSE) -f docker-compose.yml
 
 help: ## Exibe este menu de ajuda com os comandos disponíveis
 	@echo "================================================================="
-	@echo " Benchmark Suite - Comandos de Automação (Makefile)"
+	@echo " JAMS Benchmark Suite - Comandos de Automação (Makefile)"
 	@echo "================================================================="
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo "================================================================="
 	@echo " Exemplo de Uso:"
 	@echo "   make setup"
-	@echo "   make vm-up"
-	@echo "   make reset-db SYSTEMS=true"
+	@echo "   make build"
+	@echo "   make up"
+	@echo "   make reset-db"
 	@echo "   make dashboard"
-	@echo "   make load-boca SCENARIO=burst USERS=10"
+	@echo "   make load-helium USERS=5 INTERVAL=2"
 	@echo "================================================================="
 
-submodule-init: ## Garante que os submódulos Git (vagrant/) estejam clonados
-	@if [ ! -f $(VAGRANT_DIR)/Vagrantfile ]; then \
-		echo "Inicializando submódulo Git (vagrant/)..."; \
-		git submodule update --init --recursive; \
-	fi
+# --- COMANDOS GLOBAIS ---
 
-vm-up: submodule-init ## Sobe as VMs Vagrant (detecta se já estão ativas e rodando)
-	@if ping -c 1 -w 1 192.168.56.11 >/dev/null 2>&1 && ping -c 1 -w 1 192.168.56.10 >/dev/null 2>&1; then \
-		echo "✔ VMs BOCA (192.168.56.11) e Helium (192.168.56.10) já estão ativas e rodando!"; \
-	else \
-		echo "Iniciando VMs Vagrant e provisionando containers BOCA e Helium..."; \
-		cd $(VAGRANT_DIR) && vagrant up; \
-	fi
+build: helium-build ## Compila as imagens Docker da stack Helium
 
-vm-provision: submodule-init ## Re-executa os scripts de provisionamento nas VMs Vagrant
-	@echo "Forçando re-provisionamento das VMs Vagrant..."
-	cd $(VAGRANT_DIR) && vagrant provision
+up: helium-up ## Sobe todos os containers Docker da stack Helium (2 vCPU / 2048 MB RAM)
 
-vm-down: ## Desliga as máquinas virtuais Vagrant
-	@echo "Desligando VMs Vagrant..."
-	cd $(VAGRANT_DIR) && vagrant halt
+down: helium-down ## Para e remove todos os containers Docker da stack Helium
 
-vm-status: ## Exibe o status atual das máquinas virtuais Vagrant
-	@if [ -d $(VAGRANT_DIR) ]; then \
-		cd $(VAGRANT_DIR) && vagrant status; \
-	else \
-		vagrant status; \
-	fi
+ps: helium-ps ## Exibe status e consumo dos containers da stack Helium
 
-setup: install ## Instala todas as dependências Python em ambiente virtual (venv/)
+logs: helium-logs ## Exibe logs de todos os containers da stack Helium
+
+# --- COMANDOS DEDICADOS DA STACK HELIUM ---
+
+helium-build: ## Compila as imagens Docker da stack Helium
+	@echo "Building Helium Docker images..."
+	$(COMPOSE_HELIUM) build
+
+helium-up: ## Sobe os containers da stack Helium (2 vCPU / 2048 MB RAM)
+	@echo "Iniciando stack Helium via docker-compose.yml..."
+	$(COMPOSE_HELIUM) up -d
+
+helium-down: ## Para e remove os containers da stack Helium
+	@echo "Parando stack Helium..."
+	$(COMPOSE_HELIUM) down
+
+helium-ps: ## Exibe o status dos containers da stack Helium
+	$(COMPOSE_HELIUM) ps
+
+helium-logs: ## Exibe os logs dos containers da stack Helium
+	$(COMPOSE_HELIUM) logs -f
+
+reset-db-helium: reset-db ## Restaura e popula o banco de dados do Helium (MySQL)
+
+# --- CONFIGURAÇÃO & AMBIENTE ---
+
+setup: install ## Instala todas as dependências Python em ambiente virtual isolado
 
 $(VENV)/bin/activate:
-	@echo "Criando ambiente virtual Python (venv)..."
+	@echo "Criando ambiente virtual Python em $(VENV)..."
 	python3 -m venv $(VENV)
 
-install: $(VENV)/bin/activate ## Instala dependências de analysis/ e loadgen/ no venv
-	@echo "Instalando dependências de analysis/ e loadgen/ em $(VENV)..."
+install: $(VENV)/bin/activate ## Instala dependências de analysis/ e loadgen/
+	@echo "Instalando dependências Python no $(VENV)..."
 	$(PIP) install --upgrade pip
-	$(PIP) install -r analysis/requirements.txt
-	$(PIP) install -r loadgen/requirements.txt
-	@echo "✔ Dependências instaladas com sucesso no ambiente virtual ($(VENV))."
+	$(PIP) install -r $(ROOT_DIR)/analysis/requirements.txt
+	$(PIP) install -r $(ROOT_DIR)/loadgen/requirements.txt
+	@echo "✔ Dependências instaladas com sucesso no $(VENV)."
 
-reset-db: ## Restaura os bancos de dados (Adicione SYSTEMS=true para subir Docker nas VMs)
-	@echo "Resetando e populando os bancos de dados..."
-ifeq ($(SYSTEMS),true)
-	./provisioning/reset_databases.sh --systems
-else
-	./provisioning/reset_databases.sh
-endif
+reset-db: ## Restaura o banco de dados do Helium (MySQL) em estado limpo de benchmark
+	@echo "Resetando e populando o banco de dados do Helium (MySQL)..."
+	$(ROOT_DIR)/provisioning/reset_databases.sh --helium
 
-start-systems: ## Executa explicitamente 'docker compose up -d' dentro das VMs Vagrant
-	@echo "Subindo containers Docker nas VMs Vagrant via --systems..."
-	./provisioning/reset_databases.sh --systems
-
-dashboard: $(VENV)/bin/activate ## Inicia o Live Dashboard Web em http://localhost:8501
+dashboard: $(VENV)/bin/activate build up ## Constrói, sobe a stack Helium e inicia o Live Dashboard Web em http://localhost:8501
+	@echo "Limpando registros e dados anteriores de benchmark..."
+	mkdir -p results/queue
+	rm -rf results/helium/* results/queue/*
 	@echo "Iniciando Live Dashboard Web em http://localhost:8501..."
-	cd analysis && ../$(STREAMLIT) run live_dashboard.py --server.port=$(PORT)
+	cd analysis && ../$(STREAMLIT) run live_dashboard.py --server.port=$(PORT) 2>&1 | tee -a ../results/dashboard.log
 
-collect-boca: ## Inicia a coleta de telemetria sar via Vagrant SSH na VM BOCA (boca)
-	@echo "Iniciando coleta de telemetria no BOCA (SCENARIO=$(SCENARIO), INTERVAL=$(INTERVAL)s)..."
-	./monitoring/sar-collect.sh boca $(SCENARIO) $(INTERVAL)
+test-submission: $(VENV)/bin/activate ## Envia submissão de teste individual no Helium (FILE=ac_sum.cpp LANG=cpp)
+	@echo "Enviando submissão de teste para Helium (FILE=$(FILE), LANG=$(LANG))..."
+	$(PYTHON) loadgen/submitter.py --target helium --file $(FILE) --lang $(LANG)
 
-collect-helium: ## Inicia a coleta de telemetria sar via Vagrant SSH na VM Helium (helium)
-	@echo "Iniciando coleta de telemetria no Helium (SCENARIO=$(SCENARIO), INTERVAL=$(INTERVAL)s)..."
+collect-helium: ## Inicia coleta de telemetria de containers do Helium (SCENARIO=burst INTERVAL=1s)
+	@echo "Iniciando telemetria Docker no Helium (SCENARIO=$(SCENARIO), INTERVAL=$(INTERVAL)s)..."
 	./monitoring/sar-collect.sh helium $(SCENARIO) $(INTERVAL)
 
-load-boca: $(VENV)/bin/activate ## Dispara o gerador de carga Locust contra a VM BOCA (192.168.56.11:8000)
-	@echo "Disparando carga Locust no BOCA (http://192.168.56.11:8000)..."
-	cd loadgen && TARGET_SYSTEM=boca SCENARIO=$(SCENARIO) ../$(LOCUST) -f locustfile.py --host=http://192.168.56.11:8000
+load-helium: $(VENV)/bin/activate ## Dispara carga Locust contra Helium ($(HELIUM_HOST))
+	@echo "Disparando carga Locust no Helium ($(HELIUM_HOST))..."
+	cd loadgen && TARGET_SYSTEM=helium SCENARIO=$(SCENARIO) ../$(LOCUST) -f locustfile.py --host=$(HELIUM_HOST)
 
-load-helium: $(VENV)/bin/activate ## Dispara o gerador de carga Locust contra a VM Helium (192.168.56.10:8000)
-	@echo "Disparando carga Locust no Helium (http://192.168.56.10:8000)..."
-	cd loadgen && TARGET_SYSTEM=helium SCENARIO=$(SCENARIO) ../$(LOCUST) -f locustfile.py --host=http://192.168.56.10:8000
-
-clean: ## Limpa logs temporários, CSVs de resultados e o ambiente virtual
-	@echo "Limpando arquivos de resultados e ambiente virtual..."
-	rm -rf results/boca/* results/helium/* $(VENV)
+clean: ## Limpa logs temporários, CSVs de resultados e arquivos transitórios
+	@echo "Limpando arquivos de resultados temporários..."
+	rm -rf results/helium/* results/queue/*
 	@echo "✔ Limpeza concluída."
 
+# Aliases de compatibilidade
+vm-up: up ## Alias de compatibilidade para 'make up'
+vm-down: down ## Alias de compatibilidade para 'make down'
+vm-status: ps ## Alias de compatibilidade para 'make ps'

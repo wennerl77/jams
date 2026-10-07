@@ -1,0 +1,253 @@
+# =============================================================================
+# JAMS Benchmark Suite - Helium Controlled Specification
+# Target System: Helium / MicroHelium
+#
+# STRICT PARITY & CONTROLLED ENVIRONMENT:
+# - Hardware Budget: EXACTLY 2.0 vCPUs / 2048 MB RAM
+# - Memory Swap = 0 (memswap_limit == memory limit)
+# - Disk I/O: blkio_config.weight = 500
+# - Isolated Bridge Network: helium-net (172.28.2.0/24, MTU 1500)
+# =============================================================================
+
+services:
+
+  helium-db:
+    image: mysql:8.0
+    container_name: helium-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.10:3306:3306"
+      - "3307:3306"
+    environment:
+      MYSQL_DATABASE: microhelium
+      MYSQL_USER: microhelium
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: rootsecret
+    volumes:
+      - helium-db-data:/var/lib/mysql
+    networks:
+      helium-net:
+        aliases:
+          - db
+    # Resource Limits: 0.5 CPU / 512 MB RAM
+    cpus: 0.50
+    mem_limit: 512m
+    memswap_limit: 512m
+    blkio_config:
+      weight: 500
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootsecret"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  helium-redis:
+    image: redis:7-alpine
+    container_name: helium-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.10:6379:6379"
+      - "6380:6379"
+    volumes:
+      - helium-redis-data:/data
+    networks:
+      helium-net:
+        aliases:
+          - redis
+    # Resource Limits: 0.05 CPU / 64 MB RAM
+    cpus: 0.05
+    mem_limit: 64m
+    memswap_limit: 64m
+    blkio_config:
+      weight: 500
+    deploy:
+      resources:
+        limits:
+          cpus: '0.05'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  helium-app:
+    image: microhelium-app:latest
+    build:
+      context: ${MICROHELIUM_DIR:-../microHelium}
+      dockerfile: Dockerfile
+    container_name: helium-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ${MICROHELIUM_DIR:-../microHelium}:/var/www/html
+      - ${MICROHELIUM_DIR:-../microHelium}/docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini:ro
+    environment:
+      APP_NAME: MicroHelium
+      APP_ENV: local
+      APP_KEY: base64:652OE9zw5oyw9VQWrCoNGNGwLMKcHD32LhvwXjyoJyE=
+      APP_DEBUG: "true"
+      APP_URL: http://127.0.0.10:8000
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: microhelium
+      DB_USERNAME: microhelium
+      DB_PASSWORD: secret
+      DB_ROOT_PASSWORD: rootsecret
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PASSWORD: "null"
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      PHP_OPCACHE_ENABLE: 1
+      PHP_OPCACHE_VALIDATE_TIMESTAMPS: 0
+    networks:
+      helium-net:
+        aliases:
+          - app
+    depends_on:
+      helium-db:
+        condition: service_healthy
+      helium-redis:
+        condition: service_healthy
+    # Resource Limits: 0.25 CPU / 320 MB RAM
+    cpus: 0.25
+    mem_limit: 320m
+    memswap_limit: 320m
+    blkio_config:
+      weight: 500
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 320M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
+
+  helium-webserver:
+    image: nginx:alpine
+    container_name: helium-webserver
+    restart: unless-stopped
+    ports:
+      - "127.0.0.10:8000:80"
+      - "8010:80"
+      - "8443:443"
+    volumes:
+      - ${MICROHELIUM_DIR:-../microHelium}:/var/www/html
+      - ${MICROHELIUM_DIR:-../microHelium}/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${MICROHELIUM_DIR:-../microHelium}/docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      helium-net:
+        aliases:
+          - webserver
+    depends_on:
+      - helium-app
+    # Resource Limits: 0.2 CPU / 128 MB RAM
+    cpus: 0.20
+    mem_limit: 128m
+    memswap_limit: 128m
+    blkio_config:
+      weight: 500
+    deploy:
+      resources:
+        limits:
+          cpus: '0.20'
+          memory: 128M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+
+  helium-autojudge:
+    image: microhelium-judge:latest
+    build:
+      context: ${MICROHELIUM_DIR:-../microHelium}
+      dockerfile: Dockerfile.judge
+    container_name: helium-autojudge
+    restart: unless-stopped
+    working_dir: /var/www/html
+    command: php artisan queue:work --sleep=1 --tries=3
+    privileged: true
+    cap_add:
+      - SYS_PTRACE
+    volumes:
+      - ${MICROHELIUM_DIR:-../microHelium}:/var/www/html
+      - ${MICROHELIUM_DIR:-../microHelium}/storage/app/judge:/var/www/html/storage/app/judge
+      - ${MICROHELIUM_DIR:-../microHelium}/storage/app/problems:/var/www/html/storage/app/problems
+    environment:
+      APP_NAME: MicroHelium
+      APP_ENV: local
+      APP_KEY: base64:652OE9zw5oyw9VQWrCoNGNGwLMKcHD32LhvwXjyoJyE=
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: microhelium
+      DB_USERNAME: microhelium
+      DB_PASSWORD: secret
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PASSWORD: "null"
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      AUTOJUDGE_ENABLED: "true"
+      AUTOJUDGE_JAIL_PATH: /bocajail
+      AUTOJUDGE_SAFEEXEC_PATH: /usr/local/bin/safeexec
+      AUTOJUDGE_TIME_LIMIT: 10
+      AUTOJUDGE_MEMORY_LIMIT: 512
+      AUTOJUDGE_MAX_FILE_SIZE: 100
+      AUTOJUDGE_OUTPUT_LIMIT: 1024
+      AUTOJUDGE_COMPILE_TIMEOUT: 30
+      AUTOJUDGE_USER: nobody
+      AUTOJUDGE_GROUP: nogroup
+    networks:
+      helium-net:
+        aliases:
+          - autojudge
+    depends_on:
+      - helium-app
+      - helium-db
+    # Resource Limits: 1.0 CPU / 1024 MB RAM
+    cpus: 1.00
+    mem_limit: 1024m
+    memswap_limit: 1024m
+    blkio_config:
+      weight: 500
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1024M
+        reservations:
+          cpus: '0.50'
+          memory: 512M
+
+networks:
+  helium-net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.2.0/24
+
+volumes:
+  helium-db-data:
+    driver: local
+  helium-redis-data:
+    driver: local
