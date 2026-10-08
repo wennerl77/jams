@@ -164,11 +164,16 @@ st.markdown("""
         overflow-x: auto;
     }
 
-    .stMetric {
+    .stMetric, div[data-testid="stMetric"], div[data-testid="metric-container"] {
         background-color: var(--color-bg-card);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
         padding: var(--space-3);
+        height: 100%;
+        min-height: 110px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
 
     div[data-testid="stMetricValue"] {
@@ -426,7 +431,7 @@ def get_locust_executable():
         return venv_locust
     return "locust"
 
-def start_real_load_and_telemetry_session(scenario, sampling_interval, user_count, enabled_verdicts, view_mode="Apenas Helium"):
+def start_real_load_and_telemetry_session(scenario, sampling_interval, user_count, enabled_verdicts):
     sar_script = os.path.join(root_dir, "monitoring", "sar-collect.sh")
     proc_sar_helium = subprocess.Popen([sar_script, "helium", scenario, str(sampling_interval)], cwd=root_dir)
     st.session_state["spawned_pids"].append(proc_sar_helium.pid)
@@ -500,11 +505,13 @@ def render_code_modal(sub):
     
     st.markdown(f"### {render_svg_icon('code', 20, 'var(--color-text-primary)')} Submissão #{sub['id']} — {target_name}", unsafe_allow_html=True)
     
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Equipe", sub.get("team", "-"))
-    m2.metric("Linguagem", str(sub.get("language", "-")).upper())
-    m3.metric("Status", status.upper())
-    m4.metric("Veredito", verdict)
+    m1, m2 = st.columns(2)
+    with m1:
+        st.markdown(f"**Equipe:** {sub.get('team', '-')}")
+        st.markdown(f"**Linguagem:** {str(sub.get('language', '-')).upper()}")
+    with m2:
+        st.markdown(f"**Status:** {status.upper()}")
+        st.markdown(f"**Veredito:** {verdict}")
 
     sub_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(sub.get('submitted_at', time.time())))
     st.markdown(f"**Arquivo:** `{sub.get('filename', 'exercise.cpp')}` | **Problema:** `{sub.get('problem', 'A')}` | **Horário:** `{sub_time_str}`")
@@ -555,12 +562,6 @@ if st.sidebar.button("Limpar Registros", use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"<h3 style='font-size: var(--font-size-sm); color: var(--color-text-secondary);'>CONFIGURAÇÕES DE TESTE</h3>", unsafe_allow_html=True)
 
-view_mode = st.sidebar.radio(
-    "Modo de Visão / Sistema:",
-    options=["Apenas Helium"],
-    index=0
-)
-
 sampling_interval = st.sidebar.slider(
     "Frequência de Amostragem (segundos)",
     min_value=1, max_value=10, value=1, step=1,
@@ -585,6 +586,15 @@ if verdict_wa: enabled_verdicts.append("WA")
 if verdict_tle: enabled_verdicts.append("TLE")
 if verdict_ce: enabled_verdicts.append("CE")
 
+import json
+config_path = os.path.join(root_dir, "results", "locust_config.json")
+os.makedirs(os.path.dirname(config_path), exist_ok=True)
+try:
+    with open(config_path, "w") as f:
+        json.dump({"enabled_verdicts": enabled_verdicts}, f)
+except Exception:
+    pass
+
 scenario = st.sidebar.selectbox(
     "Cenário de Estresse:",
     options=["burst", "baseline", "steady", "ramp", "endurance"],
@@ -600,7 +610,7 @@ st.sidebar.markdown(f"""
 """, unsafe_allow_html=True)
 
 if st.session_state["is_running"] and not st.session_state.get("spawned_pids"):
-    start_real_load_and_telemetry_session(scenario, sampling_interval, user_count, enabled_verdicts, view_mode)
+    start_real_load_and_telemetry_session(scenario, sampling_interval, user_count, enabled_verdicts)
 
 # -----------------------------------------------------------------------------
 # Cabeçalho Principal e Banner de Estado Semânticos (a11y)
@@ -756,26 +766,71 @@ def render_submission_card(sub, target_system, key_prefix="main", idx=0):
     
     acronym, full_text, badge_icon, border_color, badge_bg = get_verdict_badge_data(status, verdict)
     
-    st.markdown(f"""
-    <article class="queue-card" style="border-left: 4px solid {border_color};" tabindex="0">
-        <div class="queue-card-header">
-            <span class="queue-card-title" title="#Run {sub_id} — {filename}">#Run {sub_id} — {filename}</span>
-            <span class="queue-card-badge" title="{full_text}" style="background-color: {badge_bg}; color: {border_color}; border: 1px solid {border_color};">
-                {badge_icon} [{acronym}]
-            </span>
-        </div>
-        <div class="queue-card-meta">
-            <span>Equipe: <strong>{team}</strong></span>
-            <span>Linguagem: <strong>{lang}</strong></span>
-            <span>Horário: <strong>{sub_time}</strong></span>
-            <span>HTTP: <strong>{sub['http_latency_ms']:.0f}ms</strong></span>
-            <span>Juiz: <strong>{sub['judge_latency_ms']:.0f}ms</strong></span>
-        </div>
-    </article>
-    """, unsafe_allow_html=True)
+    import urllib.parse
+    eye_svg = SVG_ICONS["eye"].format(size=20, color="#f0f6fc")
+    eye_svg_hover = SVG_ICONS["eye"].format(size=20, color="#58a6ff")
+    enc_eye = urllib.parse.quote(eye_svg)
+    enc_hover = urllib.parse.quote(eye_svg_hover)
     
-    if st.button(f"Ver Código (Run #{sub_id} - {target_title})", key=f"{key_prefix}_btn_card_{target_system}_{sub_id}_{idx}", use_container_width=True):
-        render_code_modal(sub)
+    with st.container():
+        st.markdown(f"""
+        <div id="rel-wrapper-{key_prefix}-{sub_id}" style="display: none;"></div>
+        <article class="queue-card" style="border-left: 4px solid {border_color}; margin-bottom: 0; padding-right: 50px;" tabindex="0">
+            <div class="queue-card-header">
+                <span class="queue-card-title" title="#Run {sub_id} — {filename}">#Run {sub_id} — {filename}</span>
+                <span class="queue-card-badge" title="{full_text}" style="background-color: {badge_bg}; color: {border_color}; border: 1px solid {border_color};">
+                    {badge_icon} [{acronym}]
+                </span>
+            </div>
+            <div class="queue-card-meta">
+                <span>Equipe: <strong>{team}</strong></span>
+                <span>Linguagem: <strong>{lang}</strong></span>
+                <span>Horário: <strong>{sub_time}</strong></span>
+                <span>HTTP: <strong>{sub['http_latency_ms']:.0f}ms</strong></span>
+                <span>Juiz: <strong>{sub['judge_latency_ms']:.0f}ms</strong></span>
+            </div>
+        </article>
+        <style>
+            /* 1. Make the Streamlit vertical block of THIS container relative */
+            div[data-testid="stVerticalBlock"]:has(> div.element-container div#rel-wrapper-{key_prefix}-{sub_id}) {{
+                position: relative;
+                margin-bottom: var(--space-2);
+            }}
+            /* 2. Make the LAST element-container (the button) absolutely positioned at top-right */
+            div[data-testid="stVerticalBlock"]:has(> div.element-container div#rel-wrapper-{key_prefix}-{sub_id}) > div.element-container:last-child {{
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                width: 32px;
+                z-index: 10;
+            }}
+            /* 3. Style the button to show the SVG */
+            div[data-testid="stVerticalBlock"]:has(> div.element-container div#rel-wrapper-{key_prefix}-{sub_id}) > div.element-container:last-child button {{
+                background-color: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                color: transparent !important;
+                width: 32px;
+                height: 32px;
+                background-image: url("data:image/svg+xml;utf8,{enc_eye}");
+                background-repeat: no-repeat;
+                background-position: center;
+                padding: 0;
+                min-height: 0;
+                transition: transform 0.2s;
+            }}
+            div[data-testid="stVerticalBlock"]:has(> div.element-container div#rel-wrapper-{key_prefix}-{sub_id}) > div.element-container:last-child button:hover {{
+                background-image: url("data:image/svg+xml;utf8,{enc_hover}");
+                transform: scale(1.1);
+            }}
+            div[data-testid="stVerticalBlock"]:has(> div.element-container div#rel-wrapper-{key_prefix}-{sub_id}) > div.element-container:last-child button p {{
+                display: none;
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+        
+        if st.button("view", key=f"{key_prefix}_btn_card_{target_system}_{sub_id}_{idx}", help=f"Ver Código (Run #{sub_id} - {target_title})"):
+            render_code_modal(sub)
 
 @st.dialog("Fila Completa de Requisições")
 def render_full_queue_modal(target_system):
@@ -837,9 +892,15 @@ def render_request_queue(target_system, header_class):
     q3.metric("Já Validadas", summary["judged"])
     q4.metric("Com Erro", summary["error"])
 
+    f_col1, f_col2 = st.columns([3, 1])
+    with f_col2:
+        filter_err = st.checkbox("Apenas Erros", key=f"main_err_filter_{target_system}")
+
+    status_filter = "Com Erro" if filter_err else None
     initial_limit = 5
     submissions = queue_manager.fetch_queue(
         target=target_system,
+        status_filter=status_filter,
         limit=initial_limit
     )
     queue_manager.log_event(f"[DASHBOARD] Render main queue summary for {target_title} (Found {len(submissions)} / Total {summary['total']})")
@@ -847,7 +908,8 @@ def render_request_queue(target_system, header_class):
     if not submissions:
         st.info(f"Nenhuma requisição na fila do {target_title}.")
     else:
-        st.markdown(f"**Últimas {len(submissions)} de {summary['total']} requisições efetuadas:**")
+        with f_col1:
+            st.markdown(f"**Últimas {len(submissions)} de {summary['total']} requisições efetuadas:**")
         for idx, sub in enumerate(submissions):
             render_submission_card(sub, target_system, key_prefix="main", idx=idx)
 
@@ -966,7 +1028,15 @@ if has_stored_data:
         fig_comp_cpu.update_layout(template="plotly_dark", title="Evolução de Carga de CPU (%user) - Helium", height=300)
         st.plotly_chart(fig_comp_cpu, use_container_width=True)
 
-# Auto-refresh em runtime apenas quando LIGADO
+# Auto-refresh em runtime quando LIGADO ou quando houver submissões ativas pendentes
 if st.session_state["is_running"]:
     time.sleep(sampling_interval)
     st.rerun()
+else:
+    try:
+        summary = queue_manager.get_queue_summary("helium")
+        if summary.get("pending", 0) > 0 or summary.get("judging", 0) > 0:
+            time.sleep(1.5)
+            st.rerun()
+    except Exception:
+        pass

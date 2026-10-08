@@ -2,7 +2,9 @@ import os
 import sys
 import time
 import random
+import threading
 from locust import HttpUser, task, between, events
+import submitter
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "monitoring")))
 try:
@@ -20,10 +22,26 @@ class HeliumUser(HttpUser):
     Locust User simulating Helium competitor workflow (Sanctum REST API + JSON Polling)
     """
     wait_time = between(max(0.5, WAIT_INTERVAL - 0.5), WAIT_INTERVAL + 0.5)
+    _login_lock = threading.Lock()
 
     def get_submission_file(self):
         """Pick a file based on enabled verdicts checklist"""
-        verdicts = [v.strip().upper() for v in ENABLED_VERDICTS if v.strip()]
+        import json
+        verdicts = ["AC"]
+        config_path = os.path.join(os.path.dirname(__file__), "..", "results", "locust_config.json")
+        
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                    if config.get("enabled_verdicts"):
+                        verdicts = config["enabled_verdicts"]
+            else:
+                env_verdicts = os.getenv("ENABLED_VERDICTS", "AC,WA,TLE,CE").split(",")
+                verdicts = [v.strip().upper() for v in env_verdicts if v.strip()]
+        except Exception:
+            pass
+
         if not verdicts:
             verdicts = ["AC"]
         
@@ -42,17 +60,24 @@ class HeliumUser(HttpUser):
         return chosen, lang, filename, file_path
 
     def on_start(self):
-        self.username = f"team{random.randint(1, 100)}"
+        self.username = "team1"
         self.password = "team123_benchmark"
-        res = self.client.post("/api/tokens", json={
-            "login": self.username,
-            "password": self.password,
-            "device_name": "locust"
-        }, name="Helium: API Login")
         
-        if res.status_code in [200, 201] and "token" in res.json():
-            token = res.json()["token"]
-            self.client.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
+        with HeliumUser._login_lock:
+            token = submitter.get_cached_token(self.username)
+            if not token:
+                res = self.client.post("/api/tokens", json={
+                    "login": self.username,
+                    "password": self.password,
+                    "device_name": "locust"
+                }, name="Helium: API Login")
+                
+                if res.status_code in [200, 201] and "token" in res.json():
+                    token = res.json()["token"]
+                    submitter.save_cached_token(self.username, token)
+            
+            if token:
+                self.client.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
 
     @task
     def submit_and_poll_run(self):
