@@ -3,11 +3,32 @@ import sys
 import time
 import random
 import requests
+import json
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "monitoring")))
 import queue_manager
 
 HELIUM_HOST = os.getenv("HELIUM_HOST", "http://127.0.0.10:8000")
+
+def get_cached_token(team):
+    cache_file = f".helium_token_{team}.json"
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                data = json.load(f)
+                if time.time() - data.get("timestamp", 0) < 1800:
+                    return data.get("token")
+        except Exception:
+            pass
+    return None
+
+def save_cached_token(team, token):
+    cache_file = f".helium_token_{team}.json"
+    try:
+        with open(cache_file, "w") as f:
+            json.dump({"token": token, "timestamp": time.time()}, f)
+    except Exception:
+        pass
 
 def load_source_code(lang, filename, custom_code=None):
     if custom_code and custom_code.strip():
@@ -41,13 +62,29 @@ def submit_to_helium(team="team1", password="team123_benchmark", problem_id=1, l
     session = requests.Session()
     try:
         start_t = time.time()
-        # 1. API Login
-        login_res = session.post(f"{HELIUM_HOST}/api/login", json={"username": team, "password": password}, timeout=5)
-        if login_res.status_code != 200 or "token" not in login_res.json():
-            queue_manager.update_submission_status(sub_id, status="error", error_message="Falha na autenticação da API Helium")
-            return sub_id, "ERROR"
         
-        token = login_res.json()["token"]
+        token = get_cached_token(team)
+        
+        if not token:
+            # 1. API Login
+            login_res = session.post(f"{HELIUM_HOST}/api/tokens", json={"login": team, "password": password, "device_name": "locust"}, timeout=5)
+            if login_res.status_code not in [200, 201] or "token" not in login_res.json():
+                if login_res.status_code == 429:
+                    err_msg = "Falha na autenticação da API Helium (HTTP 429): Rate Limit atingido. Tente novamente mais tarde."
+                elif login_res.status_code == 401:
+                    err_msg = "Falha na autenticação da API Helium (HTTP 401): Credenciais inválidas."
+                else:
+                    try:
+                        api_msg = login_res.json().get("message", "Erro desconhecido")
+                        err_msg = f"Falha na autenticação da API Helium (HTTP {login_res.status_code}): {api_msg}"
+                    except Exception:
+                        err_msg = f"Falha na autenticação da API Helium (HTTP {login_res.status_code})"
+                queue_manager.update_submission_status(sub_id, status="error", error_message=err_msg)
+                return sub_id, "ERROR"
+            
+            token = login_res.json()["token"]
+            save_cached_token(team, token)
+        
         session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
         
         # 2. POST /api/runs

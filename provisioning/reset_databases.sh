@@ -47,9 +47,9 @@ fi
 
 # Reset Helium Database (MySQL)
 echo "[*] Seeding Helium database..."
-HELIUM_APP_CID=$($DOCKER_CMD ps -q --filter name=helium-app | head -n 1)
-HELIUM_DB_CID=$($DOCKER_CMD ps -q --filter name=helium-db | head -n 1)
-HELIUM_JUDGE_CID=$($DOCKER_CMD ps -q --filter name=helium-autojudge | head -n 1)
+HELIUM_APP_CID=$($DOCKER_CMD ps -q --filter name=.*helium-app | head -n 1)
+HELIUM_DB_CID=$($DOCKER_CMD ps -q --filter name=.*helium-db | head -n 1)
+HELIUM_JUDGE_CID=$($DOCKER_CMD ps -q --filter name=.*helium-autojudge | head -n 1)
 
 if [ -n "$HELIUM_DB_CID" ]; then
     if [ -n "$HELIUM_APP_CID" ]; then

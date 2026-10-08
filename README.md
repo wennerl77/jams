@@ -85,17 +85,12 @@ A distribuição de recursos entre os 5 containers da stack Helium garante estab
 # 1. Instalar dependências Python no ambiente virtual (loadgen/venv)
 make setup
 
-# 2. Compilar imagens e subir os containers do Helium
-make build
-make up
+# 2. Certifique-se de que o Helium está rodando externamente (127.0.0.10:8000)
 
-# 3. Restaurar e popular o banco de dados do Helium em estado limpo
-make reset-db
-
-# 4. Validar submissão de teste na plataforma Helium
+# 3. Validar submissão de teste na plataforma Helium
 make test-submission TARGET=helium FILE=ac_sum.cpp LANG=cpp
 
-# 5. Iniciar o Live Dashboard Web em Tempo Real (compila e sobe os containers automaticamente!)
+# 4. Iniciar o Live Dashboard Web em Tempo Real
 make dashboard
 ```
 Acesse no navegador: **`http://localhost:8501`**
@@ -108,25 +103,9 @@ Acesse no navegador: **`http://localhost:8501`**
 | Comando | Descrição |
 |---|---|
 | `make setup` | Cria o ambiente virtual `loadgen/venv` e instala todas as dependências Python. |
-| `make build` | Compila as imagens Docker da stack Helium (`helium-build`). |
-| `make up` | Sobe todos os containers Docker da stack Helium (2 vCPU / 2GB RAM total). |
-| `make down` | Para e remove todos os containers Docker da stack Helium. |
-| `make ps` | Exibe o status e consumo dos containers da stack Helium. |
-| `make logs` | Exibe os logs unificados de todos os containers da stack Helium. |
-| `make reset-db` | Restaura e popula o banco de dados do Helium (MySQL) em estado limpo. |
-| `make dashboard` | Constrói, sobe a stack Helium e inicia a interface Streamlit em `http://localhost:8501`. |
+| `make dashboard` | Inicia a interface Streamlit em `http://localhost:8501`. |
 | `make test-submission` | Envia submissão de teste individual (`TARGET=helium FILE=ac_sum.cpp LANG=cpp`). |
 | `make clean` | Limpa logs, filas e arquivos transitórios de resultados. |
-
-### Comandos Dedicados da Stack Helium
-| Comando | Descrição |
-|---|---|
-| `make helium-build` | Compila as imagens Docker da stack Helium (`docker-compose.helium.yml`). |
-| `make helium-up` | Sobe apenas os containers da stack Helium (2 vCPU / 2048 MB RAM). |
-| `make helium-down` | Para e remove apenas os containers da stack Helium. |
-| `make helium-ps` | Exibe o status dos containers da stack Helium. |
-| `make helium-logs` | Exibe os logs dos containers da stack Helium. |
-| `make reset-db-helium` | Restaura e popula o banco de dados do Helium (MySQL). |
 | `make load-helium` | Executa o gerador de carga Locust contra o Helium (`http://127.0.0.10:8000`). |
 | `make collect-helium` | Inicia coleta de telemetria de containers do Helium (`SCENARIO=burst INTERVAL=1s`). |
 

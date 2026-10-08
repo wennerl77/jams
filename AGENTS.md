@@ -76,7 +76,7 @@ A cota consolidada de 2.0 vCPU e 2048 MB RAM é distribuída entre os componente
 
 ## 3. Especificação do Alvo Helium (MicroHelium)
 
-- **Autenticação**: API REST JSON em `POST /api/login` retornando token Sanctum (`Bearer <token>`).
+- **Autenticação**: API REST JSON em `POST /api/tokens` retornando token Sanctum (`Bearer <token>`).
 - **Submissão**: `POST /api/runs` via `multipart/form-data` (`contest_id`, `problem_id`, `language_id`, `source_file`) retornando HTTP 201 com o objeto Run.
 - **Julgamento**: `helium-autojudge` executando `php artisan queue:work --sleep=1 --tries=3` em container privilegiado com `cap_add: [SYS_PTRACE]`, compilando fontes (`g++`, `gcc`, etc.) e executando casos de teste via `safeexec`.
 - **Polling de Veredito**: Polling REST em `GET /api/runs/{id}` com extração direta de `status`, `answer_id` e `auto_judge_result`.
@@ -105,33 +105,16 @@ O script `monitoring/sar-collect.sh` executa `docker-collect.py` de forma síncr
 # 1. Instalar dependências Python no ambiente virtual (loadgen/venv)
 make setup
 
-# 2. Compilar imagens e subir os containers do Helium
-make build
-make up
+# 2. Certifique-se de que a stack do Helium está rodando externamente (127.0.0.10:8000)
 
-# 3. Resetar e popular o banco de dados do Helium em estado limpo
-make reset-db
-
-# 4. Validar submissão individual na API do Helium
+# 3. Validar submissão individual na API do Helium
 make test-submission TARGET=helium FILE=ac_sum.cpp LANG=cpp
 
-# 5. Iniciar o Live Dashboard Web em http://localhost:8501 (compila e sobe automaticamente!)
+# 4. Iniciar o Live Dashboard Web em http://localhost:8501
 make dashboard
 
-# 6. Executar teste de carga Locust contra o Helium
+# 5. Executar teste de carga Locust contra o Helium
 make load-helium SCENARIO=burst USERS=10
-```
-
-### Comandos de Gestão da Stack Helium
-
-```bash
-make helium-build       # Compila imagens Docker do Helium
-make helium-up          # Sobe containers da stack Helium
-make helium-down        # Para e remove containers do Helium
-make helium-ps          # Exibe status dos containers
-make helium-logs        # Exibe logs dos containers do Helium
-make reset-db-helium    # Restaura e popula banco MySQL do Helium
-make collect-helium     # Inicia telemetria dos containers do Helium
 ```
 
 ---
@@ -140,7 +123,7 @@ make collect-helium     # Inicia telemetria dos containers do Helium
 
 1. **Foco Exclusivo no Helium**: O repositório e seus módulos de carga, automação e observabilidade são dedicados exclusivamente à stack Helium (MicroHelium). Não reintroduza referências ou fluxos de execução legados.
 2. **Cota e Alocação de Recursos Estrita**: Respeite a cota consolidada de 2.0 vCPUs e 2048 MB RAM distribuída entre os 5 containers do Helium (`helium-webserver`, `helium-app`, `helium-redis`, `helium-autojudge`, `helium-db`).
-3. **Ambiente Limpo Pré-Teste**: Execute `make reset-db` (ou `make reset-db-helium`) antes de rodar qualquer bateria de medição para evitar resíduos de runs anteriores nas filas do Redis e tabelas do MySQL.
+3. **Gestão Externa do Helium**: Este projeto atua apenas como cliente de carga. O Helium deve ser instanciado e gerenciado externamente pelo usuário no respectivo repositório original. Nunca tente utilizar docker-compose build ou up aqui.
 4. **Isolamento de Recursos**: O Locust, a telemetria e o Dashboard executam no host fora dos containers do Helium para não poluir o consumo de CPU/RAM da instância testada.
 5. **Massa de Testes Padronizada**: Mantenha os códigos-fonte em `loadgen/submissions/` para validação fiel dos tempos de compilação e vereditos.
-6. **Exclusividade Docker Compose**: É estritamente proibido utilizar máquinas virtuais (Vagrant/VirtualBox). Toda execução, orquestração, teste de carga e telemetria ocorre exclusivamente via containers Docker Compose (`docker-compose.helium.yml` / `docker-compose.yml`) e cgroups nativos do host Linux.
+6. **Telemetria de Containers**: O projeto suporta a telemetria lendo os cgroups nativos do host, desde que os containers do Helium obedeçam os nomes e a estrutura esperados.
