@@ -44,14 +44,15 @@ class HeliumUser(HttpUser):
     def on_start(self):
         self.username = f"team{random.randint(1, 100)}"
         self.password = "team123_benchmark"
-        res = self.client.post("/api/login", json={
-            "username": self.username,
-            "password": self.password
+        res = self.client.post("/api/tokens", json={
+            "login": self.username,
+            "password": self.password,
+            "device_name": "locust"
         }, name="Helium: API Login")
         
-        if res.status_code == 200 and "token" in res.json():
+        if res.status_code in [200, 201] and "token" in res.json():
             token = res.json()["token"]
-            self.client.headers.update({"Authorization": f"Bearer {token}"})
+            self.client.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
 
     @task
     def submit_and_poll_run(self):

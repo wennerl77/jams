@@ -42,8 +42,8 @@ def submit_to_helium(team="team1", password="team123_benchmark", problem_id=1, l
     try:
         start_t = time.time()
         # 1. API Login
-        login_res = session.post(f"{HELIUM_HOST}/api/login", json={"username": team, "password": password}, timeout=5)
-        if login_res.status_code != 200 or "token" not in login_res.json():
+        login_res = session.post(f"{HELIUM_HOST}/api/tokens", json={"login": team, "password": password, "device_name": "locust"}, timeout=5)
+        if login_res.status_code not in [200, 201] or "token" not in login_res.json():
             queue_manager.update_submission_status(sub_id, status="error", error_message="Falha na autenticação da API Helium")
             return sub_id, "ERROR"
         

@@ -54,37 +54,6 @@ help: ## Exibe este menu de ajuda com os comandos disponíveis
 
 # --- COMANDOS GLOBAIS ---
 
-build: helium-build ## Compila as imagens Docker da stack Helium
-
-up: helium-up ## Sobe todos os containers Docker da stack Helium (2 vCPU / 2048 MB RAM)
-
-down: helium-down ## Para e remove todos os containers Docker da stack Helium
-
-ps: helium-ps ## Exibe status e consumo dos containers da stack Helium
-
-logs: helium-logs ## Exibe logs de todos os containers da stack Helium
-
-# --- COMANDOS DEDICADOS DA STACK HELIUM ---
-
-helium-build: ## Compila as imagens Docker da stack Helium
-	@echo "Building Helium Docker images..."
-	$(COMPOSE_HELIUM) build
-
-helium-up: ## Sobe os containers da stack Helium (2 vCPU / 2048 MB RAM)
-	@echo "Iniciando stack Helium via docker-compose.yml..."
-	$(COMPOSE_HELIUM) up -d
-
-helium-down: ## Para e remove os containers da stack Helium
-	@echo "Parando stack Helium..."
-	$(COMPOSE_HELIUM) down
-
-helium-ps: ## Exibe o status dos containers da stack Helium
-	$(COMPOSE_HELIUM) ps
-
-helium-logs: ## Exibe os logs dos containers da stack Helium
-	$(COMPOSE_HELIUM) logs -f
-
-reset-db-helium: reset-db ## Restaura e popula o banco de dados do Helium (MySQL)
 
 # --- CONFIGURAÇÃO & AMBIENTE ---
 
@@ -105,12 +74,12 @@ reset-db: ## Restaura o banco de dados do Helium (MySQL) em estado limpo de benc
 	@echo "Resetando e populando o banco de dados do Helium (MySQL)..."
 	$(ROOT_DIR)/provisioning/reset_databases.sh --helium
 
-dashboard: $(VENV)/bin/activate build up ## Constrói, sobe a stack Helium e inicia o Live Dashboard Web em http://localhost:8501
+dashboard: $(VENV)/bin/activate ## Inicia o Live Dashboard Web em http://localhost:8501
 	@echo "Limpando registros e dados anteriores de benchmark..."
 	mkdir -p results/queue
 	rm -rf results/helium/* results/queue/*
 	@echo "Iniciando Live Dashboard Web em http://localhost:8501..."
-	cd analysis && ../$(STREAMLIT) run live_dashboard.py --server.port=$(PORT) 2>&1 | tee -a ../results/dashboard.log
+	cd analysis && $(STREAMLIT) run live_dashboard.py --server.port=$(PORT) 2>&1 | tee -a ../results/dashboard.log
 
 test-submission: $(VENV)/bin/activate ## Envia submissão de teste individual no Helium (FILE=ac_sum.cpp LANG=cpp)
 	@echo "Enviando submissão de teste para Helium (FILE=$(FILE), LANG=$(LANG))..."
@@ -122,7 +91,7 @@ collect-helium: ## Inicia coleta de telemetria de containers do Helium (SCENARIO
 
 load-helium: $(VENV)/bin/activate ## Dispara carga Locust contra Helium ($(HELIUM_HOST))
 	@echo "Disparando carga Locust no Helium ($(HELIUM_HOST))..."
-	cd loadgen && TARGET_SYSTEM=helium SCENARIO=$(SCENARIO) ../$(LOCUST) -f locustfile.py --host=$(HELIUM_HOST)
+	cd loadgen && TARGET_SYSTEM=helium SCENARIO=$(SCENARIO) $(LOCUST) -f locustfile.py --host=$(HELIUM_HOST)
 
 clean: ## Limpa logs temporários, CSVs de resultados e arquivos transitórios
 	@echo "Limpando arquivos de resultados temporários..."

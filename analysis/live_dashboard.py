@@ -341,7 +341,10 @@ if "df_helium" not in st.session_state:
 # -----------------------------------------------------------------------------
 
 def get_real_resting_telemetry(target_system="helium"):
-    containers = {"helium-webserver", "helium-app", "helium-autojudge", "helium-redis", "helium-db"}
+    containers = {
+        "helium-webserver", "helium-app", "helium-autojudge", "helium-redis", "helium-db",
+        "microhelium-webserver", "microhelium-app", "microhelium-autojudge", "microhelium-redis", "microhelium-db"
+    }
     cmds = [
         "docker stats --no-stream --format \"{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\"",
         "sg docker -c '\''docker stats --no-stream --format \"{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\"'\''",
@@ -475,6 +478,18 @@ def clear_all_records():
         pass
 
 # -----------------------------------------------------------------------------
+# Verificação de Saúde (Health Check)
+# -----------------------------------------------------------------------------
+import requests
+def check_helium_status():
+    helium_host = os.getenv("HELIUM_HOST", "http://127.0.0.10:8000")
+    try:
+        requests.get(helium_host, timeout=1)
+        return True
+    except Exception:
+        return False
+
+# -----------------------------------------------------------------------------
 # Modal Dialog Acessível para Código Fonte
 # -----------------------------------------------------------------------------
 @st.dialog("Código Fonte da Submissão")
@@ -601,7 +616,20 @@ st.markdown(f"""
 
 has_stored_data = st.session_state.get("df_helium") is not None and not st.session_state["df_helium"].empty
 
-if st.session_state["is_running"]:
+helium_online = check_helium_status()
+
+if not helium_online:
+    st.markdown(f"""
+    <div class="status-banner-off" role="status" aria-live="polite">
+        {render_svg_icon('x-circle', 20, 'var(--color-error)')}
+        <span>HELIUM OFFLINE: Não foi possível conectar ao servidor Helium. Por favor, certifique-se de que ele esteja rodando externamente.</span>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.session_state["is_running"]:
+        stop_real_load_session()
+        st.session_state["is_running"] = False
+        st.rerun()
+elif st.session_state["is_running"]:
     st.markdown(f"""
     <div class="status-banner-on" role="status" aria-live="polite">
         {render_svg_icon('check-circle', 20, 'var(--color-success)')}
@@ -618,7 +646,7 @@ elif has_stored_data:
 else:
     st.markdown(f"""
     <div class="status-banner-off" role="status" aria-live="polite">
-        {render_svg_icon('x-circle', 20, 'var(--color-error)')}
+        {render_svg_icon('info', 20, 'var(--color-text-secondary)')}
         <span>MODO DE OBSERVAÇÃO EM REPOUSO (STANDBY): Clique em "LIGAR" para iniciar a leitura de dados novos ou execute testes via CLI.</span>
     </div>
     """, unsafe_allow_html=True)

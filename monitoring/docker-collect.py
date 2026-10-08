@@ -28,11 +28,11 @@ def get_docker_cmd():
 DOCKER_CMD = get_docker_cmd()
 
 HELIUM_CONTAINERS = (
-    "helium-db",
-    "helium-redis",
-    "helium-app",
-    "helium-webserver",
-    "helium-autojudge"
+    "microhelium-db", "helium-db",
+    "microhelium-redis", "helium-redis",
+    "microhelium-app", "helium-app",
+    "microhelium-webserver", "helium-webserver",
+    "microhelium-autojudge", "helium-autojudge"
 )
 
 def parse_bytes(val_str):
